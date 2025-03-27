@@ -6,202 +6,273 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css">
     <style>
-        .CodeMirror {
-            height: 500px;
-            border: 2px solid #4a4a4a;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        .CodeMirror { 
+            height: 500px; 
+            border: 2px solid #4a4a4a; 
+            font-family: 'Consolas', 'Courier New', monospace; 
+            font-size: 14px; 
+            line-height: 1.6; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
         }
-        .editor-container {
-            max-width: 900px;
-            margin: 20px auto;
-            padding: 15px;
-            background-color: #f4f4f4;
-            border-radius: 10px;
+        .editor-container { 
+            max-width: 900px; 
+            margin: 20px auto; 
+            padding: 15px; 
+            background-color: #f4f4f4; 
+            border-radius: 10px; 
         }
-        .editor-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
+        .editor-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 10px; 
         }
-        #language-select {
-            padding: 8px;
-            border-radius: 5px;
-            border: 1px solid #ddd;
+        .question-container { 
+            max-width: 900px; 
+            margin: 20px auto; 
         }
-        .question-container {
-            max-width: 900px;
-            margin: 20px auto;
+        .submit-button { 
+            margin-top: 10px; 
+            padding: 10px 20px; 
+            background-color: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            display: block; 
+            margin-left: auto; 
+            margin-right: auto; 
         }
-        .submit-button {
-            margin-top: 10px;
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            display: block; /* Add this to make the button a block element */
-            margin-left: auto; /* Center horizontally */
-            margin-right: auto; /* Center horizontally */
+        .submit-button:hover { 
+            background-color: #45a049; 
         }
-        .submit-button:hover {
-            background-color: #45a049;
+        .video-container { 
+            max-width: 900px; 
+            margin: 20px auto; 
+            padding: 15px; 
+            background-color: #f4f4f4; 
+            border-radius: 10px; 
+            text-align: center; 
+        }
+        #video-preview { 
+            width: 100%; 
+            max-width: 600px; 
+            height: auto; 
+            border: 2px solid #4a4a4a; 
+            border-radius: 8px; 
+            margin-bottom: 10px; 
+        }
+        .video-controls button { 
+            padding: 8px 15px; 
+            margin: 5px; 
+            background-color: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+        .video-controls button:hover { 
+            background-color: #45a049; 
+        }
+        .error-message { 
+            color: red; 
+            margin-top: 10px; 
+            font-size: 14px; 
+        }
+        .info-message { 
+            color: #333; 
+            margin-top: 10px; 
+            font-size: 14px; 
         }
     </style>
 </head>
 <body>
     <div class="question-container">
         <h2>Interview Question</h2>
-
         {% if error %}
             <p style="color:red">{{ error }}</p>
         {% endif %}
-
         <div>
             <p><strong>Question Type:</strong> {{ question.type|capfirst }}</p>
             <p><strong>Question:</strong> {{ question.content }}</p>
+            {% if question.type == 'technical' and question.skill %}
+                <p><strong>Language:</strong> {{ question.skill.language }}</p>
+            {% endif %}
             <p><strong>Total Questions:</strong> {{ total_questions }}</p>
             <p><strong>Remaining Questions:</strong> {{ remaining_questions }}</p>
             <p>Question {{ current_question }} of {{ total_questions }}</p>
         </div>
     </div>
 
-    <form method="post" id="response-form">
+    <form method="post" id="response-form" enctype="multipart/form-data" onsubmit="return validateForm()">
         {% csrf_token %}
-        <div class="editor-container">
-            <div class="editor-header">
-                <h3>Code Solution</h3>
-                <select id="language-select">
-                    <option value="java" {% if question.skill.language|lower == "java" %}selected{% endif %}>Java</option>
-                    <option value="python" {% if question.skill.language|lower == "python" %}selected{% endif %}>Python</option>
-                    <option value="javascript" {% if question.skill.language|lower == "javascript" %}selected{% endif %}>JavaScript</option>
-                    <option value="cpp" {% if question.skill.language|lower == "cpp" %}selected{% endif %}>C++</option>
-                </select>
+        {% if question.type == 'technical' %}
+            <div class="editor-container">
+                <div class="editor-header">
+                    <h3>Code Solution ({{ question.skill.language }})</h3>
+                </div>
+                <textarea id="code-editor" name="content" style="display:none;"></textarea>
+                <div id="error-container" class="error-message"></div>
             </div>
-            <!-- Hidden textarea for form submission -->
-            <textarea id="code-editor" name="content" style="display:none;"></textarea>
-            <div id="error-container" style="color: red; margin-top: 10px;"></div>
-        </div>
+        {% else %}
+            <div class="video-container">
+                <h3>Record Your Response</h3>
+                <video id="video-preview" controls autoplay muted></video>
+                <div class="video-controls">
+                    <button type="button" id="start-recording">Start Recording</button>
+                    <button type="button" id="stop-recording" disabled>Stop Recording</button>
+                </div>
+                <input type="file" id="video-upload" name="video" accept="video/*" style="display:none;">
+                <div id="video-error" class="error-message"></div>
+                <div id="video-info" class="info-message">Ensure your microphone is on and speak clearly.</div>
+            </div>
+        {% endif %}
         <button type="submit" class="submit-button">Submit Response</button>
     </form>
 
     <!-- CodeMirror Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
-    <!-- Language Modes -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/clike/clike.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/python/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/javascript/javascript.min.js"></script>
-    <!-- Addons for Enhanced Functionality -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/edit/matchbrackets.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/edit/closebrackets.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/hint/show-hint.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/lint/lint.min.js"></script>
 
     <script>
-        // Initialize CodeMirror
-        var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
-            mode: "text/x-java",  // Default to Java
-            theme: "dracula",
-            lineNumbers: true,
-            lineWrapping: true,
-            autoCloseBrackets: true,
-            matchBrackets: true,
-            indentUnit: 4,
-            tabSize: 4,
-            indentWithTabs: false,
-            extraKeys: {
-                "Tab": "insertSoftTab",
-                "Shift-Tab": "indentLess"
-            }
-        });
+        let editor, stream;
 
-        // Language selection logic
-        document.getElementById('language-select').addEventListener('change', function() {
-            var languageModes = {
+        // Form validation
+        function validateForm() {
+            {% if question.type == 'technical' %}
+                editor.save();
+                const codeContent = document.getElementById('code-editor').value.trim();
+                if (!codeContent) {
+                    document.getElementById('error-container').textContent = 'Code cannot be empty.';
+                    return false;
+                }
+            {% else %}
+                const videoUpload = document.getElementById('video-upload');
+                if (!videoUpload.files.length) {
+                    document.getElementById('video-error').textContent = 'Please record a video before submitting.';
+                    return false;
+                }
+            {% endif %}
+            return true;
+        }
+
+        // Technical question: CodeMirror setup
+        {% if question.type == 'technical' %}
+            const skillLanguage = "{{ question.skill.language|lower|default:'java' }}";
+            const languageModes = {
                 'java': 'text/x-java',
                 'python': 'text/x-python',
                 'javascript': 'text/javascript',
                 'cpp': 'text/x-c++src'
             };
-            
-            var mode = languageModes[this.value];
-            editor.setOption('mode', mode);
-
-            // Set default template based on language
-            var templates = {
-                'java': `public class Solution {
-    public static void main(String[] args) {
-        // Your solution here
-    }
-}`,
-                'python': `def solution():
-    # Your solution here
-    pass
-
-# Main execution
-if __name__ == "__main__":
-    solution()`,
-                'javascript': `function solution() {
-    // Your solution here
-}
-
-// Example usage
-console.log(solution());`,
-                'cpp': `#include <iostream>
-
-int main() {
-    // Your solution here
-    return 0;
-}`
+            const templates = {
+                'java': `public class Solution {\n    public static void main(String[] args) {\n        // Your solution here\n    }\n}`,
+                'python': `def solution():\n    # Your solution here\n    pass\n\nif __name__ == "__main__":\n    solution()`,
+                'javascript': `function solution() {\n    // Your solution here\n}\n\nconsole.log(solution());`,
+                'cpp': `#include <iostream>\n\nint main() {\n    // Your solution here\n    return 0;\n}`
             };
 
-            // Only set the template if the editor is empty
+            editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+                mode: languageModes[skillLanguage] || 'text/x-java',
+                theme: "dracula",
+                lineNumbers: true,
+                lineWrapping: true,
+                autoCloseBrackets: true,
+                matchBrackets: true,
+                indentUnit: 4,
+                tabSize: 4,
+                indentWithTabs: false,
+                extraKeys: {
+                    "Tab": "insertSoftTab",
+                    "Shift-Tab": "indentLess"
+                }
+            });
+
             if (!editor.getValue().trim()) {
-                editor.setValue(templates[this.value]);
+                editor.setValue(templates[skillLanguage] || templates['java']);
             }
-        });
+        {% endif %}
 
-        // Set initial language based on question skill
-        var initialLanguage = "{{ question.skill.language|lower }}";
-        var languageSelect = document.getElementById('language-select');
-        if (initialLanguage && languageSelect.options.namedItem(initialLanguage)) {
-            languageSelect.value = initialLanguage;
-            languageSelect.dispatchEvent(new Event('change'));
-        }
+        // Behavioral question: Video recording setup
+        {% if question.type != 'technical' %}
+            let mediaRecorder;
+            let recordedChunks = [];
+            const videoElement = document.getElementById('video-preview');
+            const startButton = document.getElementById('start-recording');
+            const stopButton = document.getElementById('stop-recording');
+            const videoUpload = document.getElementById('video-upload');
+            const videoError = document.getElementById('video-error');
+            const videoInfo = document.getElementById('video-info');
 
-        // Optional: Basic syntax error checking
-        function checkSyntax() {
-            var content = editor.getValue();
-            var errorContainer = document.getElementById('error-container');
-            errorContainer.textContent = '';
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(mediaStream => {
+                    stream = mediaStream;
+                    videoElement.srcObject = stream;
 
-            try {
-                // For Java-like languages
-                if (content.includes('public class') && !content.includes('public static void main')) {
-                    errorContainer.textContent = 'Warning: Missing main method in Java class';
+                    // Verify audio tracks
+                    const audioTracks = stream.getAudioTracks();
+                    if (audioTracks.length === 0) {
+                        videoError.textContent = 'No microphone detected. Please connect a microphone and refresh.';
+                        startButton.disabled = true;
+                        stopButton.disabled = true;
+                        return;
+                    }
+
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+
+                    mediaRecorder.ondataavailable = event => {
+                        recordedChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                        const file = new File([blob], 'response.webm', { type: 'video/webm' });
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        videoUpload.files = dataTransfer.files;
+
+                        videoElement.srcObject = null;
+                        videoElement.src = URL.createObjectURL(blob);
+                        videoElement.muted = false;
+
+                        stream.getTracks().forEach(track => track.stop());
+                        stream = null;
+                        videoInfo.textContent = 'Recording stopped. Review your video and submit.';
+                    };
+
+                    startButton.addEventListener('click', () => {
+                        recordedChunks = [];
+                        mediaRecorder.start();
+                        startButton.disabled = true;
+                        stopButton.disabled = false;
+                        videoError.textContent = '';
+                        videoInfo.textContent = 'Recording... Speak clearly into your microphone.';
+                    });
+
+                    stopButton.addEventListener('click', () => {
+                        mediaRecorder.stop();
+                        startButton.disabled = false;
+                        stopButton.disabled = true;
+                    });
+                })
+                .catch(err => {
+                    console.error('Error accessing media devices:', err);
+                    videoError.textContent = 'Unable to access camera or microphone. Please grant permissions and ensure devices are connected.';
+                    startButton.disabled = true;
+                    stopButton.disabled = true;
+                });
+
+            window.addEventListener('beforeunload', () => {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
                 }
-
-                // Check for basic syntax issues
-                if (content.includes('===') && document.getElementById('language-select').value !== 'javascript') {
-                    errorContainer.textContent = 'Potential syntax error: === used in non-JavaScript language';
-                }
-            } catch (error) {
-                errorContainer.textContent = 'Syntax check error: ' + error.message;
-            }
-        }
-
-        // Attach syntax checking to editor changes
-        editor.on('change', checkSyntax);
-
-        // Ensure CodeMirror content is synced with the form on submit
-        document.getElementById('response-form').addEventListener('submit', function() {
-            document.getElementById('code-editor').value = editor.getValue();
-        });
+            });
+        {% endif %}
     </script>
 </body>
 </html>

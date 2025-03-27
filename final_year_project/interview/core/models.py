@@ -26,9 +26,10 @@ class Question(models.Model):
 
 class Response(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    content = models.TextField()
-    score = models.FloatField(null=True)
-    feedback = models.TextField(null=True)
+    content = models.TextField(blank=True, null=True)  # For technical responses
+    video = models.FileField(upload_to='videos/', blank=True, null=True)  # For behavioral responses
+    score = models.FloatField(null=True, blank=True)
+    feedback = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

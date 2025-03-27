@@ -1,3 +1,4 @@
+import os
 import re
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, logout, authenticate
@@ -8,6 +9,17 @@ import google.generativeai as genai
 from .models import User, ProgrammingSkill, Question, Response
 from .forms import UserRegistrationForm, ProgrammingSkillForm, ResponseForm
 import logging
+from .utils import generate_questions, evaluate_with_gemini, evaluate_behavioral_response
+
+import logging
+import re
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+
+import speech_recognition as sr
+from google.generativeai import GenerativeModel  # Hypothetical Gemini API import
+import google.generativeai as genai
+from pydub import AudioSegment
 
 # Create a logger specific to this module
 logger = logging.getLogger('interview')
@@ -60,188 +72,275 @@ def skill_create(request):
     else:
         form = ProgrammingSkillForm()
     return render(request, 'skill_form.html', {'form': form})
-import logging
-import re
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
 
-logger = logging.getLogger(__name__)
+
+
+# Generate 6 questions via Gemini API
+def generate_questions_via_gemini(skill_language):
+    technical_prompt = f"Generate exactly 3 technical coding questions for a {skill_language} interview. Return each question as a separate line."
+    behavioral_prompt = "Generate exactly 3 behavioral interview questions. Return each question as a separate line."
+    
+    try:
+        # Fetch technical questions
+        technical_response = model.generate_content(technical_prompt)
+        logger.info(f"Raw technical response: {technical_response.text}")
+        technical_questions = [q.strip() for q in technical_response.text.split('\n') if q.strip()]
+        
+        # Fetch behavioral questions
+        behavioral_response = model.generate_content(behavioral_prompt)
+        logger.info(f"Raw behavioral response: {behavioral_response.text}")
+        behavioral_questions = [q.strip() for q in behavioral_response.text.split('\n') if q.strip()]
+        
+        # Ensure exactly 3 questions of each type
+        if len(technical_questions) < 3:
+            logger.warning(f"Only {len(technical_questions)} technical questions returned. Padding with defaults.")
+            technical_questions.extend([f"Default technical question {i+1} for {skill_language}" for i in range(len(technical_questions), 3)])
+        elif len(technical_questions) > 3:
+            technical_questions = technical_questions[:3]
+            
+        if len(behavioral_questions) < 3:
+            logger.warning(f"Only {len(behavioral_questions)} behavioral questions returned. Padding with defaults.")
+            behavioral_questions.extend([f"Default behavioral question {i+1}" for i in range(len(behavioral_questions), 3)])
+        elif len(behavioral_questions) > 3:
+            behavioral_questions = behavioral_questions[:3]
+
+        return (
+            [{'type': 'technical', 'content': q} for q in technical_questions],
+            [{'type': 'behavioral', 'content': q} for q in behavioral_questions]
+        )
+    
+    except Exception as e:
+        logger.error(f"Error calling Gemini API: {str(e)}")
+        # Fallback to default questions if API fails
+        return (
+            [{'type': 'technical', 'content': f"Default technical question {i+1} for {skill_language}"} for i in range(3)],
+            [{'type': 'behavioral', 'content': f"Default behavioral question {i+1}"} for i in range(3)]
+        )
+# Evaluate technical response with Gemini
+def evaluate_technical_response(question, response_content):
+    evaluation_prompt = f"""
+    You are an expert technical interviewer evaluating a coding solution.
+    Question: {question.content}
+    Response: {response_content}
+    
+    Please provide a comprehensive evaluation with the following details:
+    1. Correctness: Does the solution correctly solve the problem?
+    2. Efficiency: What is the time and space complexity?
+    3. Code Quality: Assess code readability, structure, and best practices
+    4. Test Case Coverage: Identify potential edge cases or scenarios not handled
+    5. Score: Provide a numerical score out of 100 as a float (e.g., 85.0, not 85/100 or **85**)
+    6. Specific, constructive feedback on improvements
+    
+    Format your response as:
+    - Correctness: [Assessment]
+    - Efficiency: [Big O analysis]
+    - Code Quality: [Evaluation]
+    - Test Case Coverage: [Insights]
+    - Score: [Float score]
+    - Feedback: [Detailed suggestions]
+    """
+    try:
+        response = model.generate_content(evaluation_prompt)
+        logger.debug(f"Raw Gemini response for technical evaluation: {response.text}")
+        lines = response.text.split('\n')
+        score_line = next((line for line in lines if "Score:" in line), "Score: 50.0")
+        score_str = score_line.split(':')[1].strip().split()[0]
+        
+        # Remove Markdown-like formatting (e.g., **)
+        score_str = score_str.replace('**', '')
+        
+        # Handle different score formats
+        if '/' in score_str:  # e.g., "85/100"
+            numerator = float(score_str.split('/')[0])
+            denominator = float(score_str.split('/')[1])
+            score = (numerator / denominator) * 100
+        else:
+            score = float(score_str)
+        
+        feedback = '\n'.join(lines)
+        return score, feedback
+    except ValueError as e:
+        logger.error(f"Error parsing score in evaluate_technical_response: {str(e)} - Raw score string: {score_str}")
+        return 50.0, f"Evaluation failed due to score parsing error: {str(e)}"
+    except Exception as e:
+        logger.error(f"Error in evaluate_technical_response: {str(e)}")
+        return 50.0, f"Evaluation failed due to an error: {str(e)}"
+
+# Evaluate behavioral response with Gemini
+def evaluate_behavioral_response(video_path, question_content):
+    try:
+        # Step 1: Extract audio from video
+        logger.debug(f"Processing video file: {video_path}")
+        video = AudioSegment.from_file(video_path)
+        audio_path = video_path.replace('.webm', '.wav')
+        logger.debug(f"Exporting audio to: {audio_path}")
+        video.export(audio_path, format='wav')
+
+        # Step 2: Convert audio to text
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(audio_path) as source:
+            logger.debug("Recording audio from WAV file")
+            audio = recognizer.record(source)
+            try:
+                logger.debug("Attempting speech recognition")
+                text = recognizer.recognize_google(audio)
+                logger.info(f"Transcribed text: {text}")
+            except sr.UnknownValueError:
+                logger.warning("Speech recognition failed: No understandable speech detected")
+                text = ""
+            except sr.RequestError as e:
+                logger.error(f"Speech recognition service error: {str(e)}")
+                return 50.0, f"Speech recognition service unavailable: {str(e)}"
+
+        # Step 3: Clean up
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+            logger.debug(f"Cleaned up temporary file: {audio_path}")
+
+        if not text:
+            return 40.0, "No speech detected in the video. Please ensure you speak clearly during recording."
+
+        # Step 4: Evaluate with Gemini
+        evaluation_prompt = f"""
+        You are an expert interviewer evaluating a behavioral interview response.
+        
+        Transcribed Response:
+        {text}
+        
+        Question: {question_content}
+        
+        Please provide a comprehensive evaluation:
+        1. Communication Clarity
+        2. Storytelling Effectiveness
+        3. Problem-Solving Demonstration
+        4. Professionalism
+        5. Relevance to the Question
+        
+        Provide:
+        - Detailed feedback
+        - Strengths
+        - Areas of improvement
+        - Score out of 100 as a float (e.g., 85.0, not 85/100 or **85**)
+        
+        Format your response with clear sections and actionable insights.
+        """
+        logger.debug("Sending evaluation prompt to Gemini")
+        response = model.generate_content(evaluation_prompt)
+        logger.debug(f"Raw Gemini response for behavioral evaluation: {response.text}")
+        lines = response.text.split('\n')
+        score_line = next((line for line in lines if "Score:" in line), "Score: 50.0")
+        score_str = score_line.split(':')[1].strip().split()[0]
+        
+        # Remove Markdown-like formatting (e.g., **)
+        score_str = score_str.replace('**', '')
+        
+        # Handle different score formats
+        if '/' in score_str:  # e.g., "85/100"
+            numerator = float(score_str.split('/')[0])
+            denominator = float(score_str.split('/')[1])
+            score = (numerator / denominator) * 100
+        else:
+            score = float(score_str)
+        
+        feedback = '\n'.join(lines)
+        logger.info(f"Evaluated behavioral response - Score: {score}, Feedback: {feedback}")
+        return score, feedback
+
+    except Exception as e:
+        logger.error(f"Error evaluating behavioral response: {str(e)}")
+        return 50.0, f"Unable to evaluate video response due to an error: {str(e)}"
 
 @login_required
-def start_interview(request):
-    """
-    Generate interview questions or handle existing interview process
-    """
-    # Validate user skills
+def interview(request):
     skills = ProgrammingSkill.objects.filter(user=request.user)
-    
-    # Early return if no skills exist
-    if not skills.exists():
-        logger.warning(f"User {request.user.username} has no skills defined")
-        return render(request, 'home.html', {'error': 'Please add a skill first.'})
-    
-    # Select primary skill for interview (first skill)
-    skill = skills.first()
-    
-    # Check existing questions
-    existing_questions = Question.objects.filter(user=request.user)
-    
-    # Generate questions if not existing
-    if not existing_questions.exists():
-        max_attempts = 3  # Retry up to 3 times if insufficient questions
-        questions = []
-        for attempt in range(max_attempts):
-            try:
-                # Detailed prompt for question generation
-                prompt = (
-                    f"Generate interview questions for a backend {skill.language} developer with {skill.proficiency} years of experience. "
-                    "Provide exactly 3 technical {skill.language} questions that test coding and problem-solving skills, "
-                    "followed by exactly 3 behavioral questions assessing teamwork and professional growth. "
-                    "Each question must be a clear, specific problem or scenario. "
-                    "Format the questions as a list, one question per line, without numbering or introductory text. "
-                    "Ensure you provide exactly 6 questions in total."
-                )
-                
-                # Generate content using Gemini
-                response = model.generate_content(
-                    prompt, 
-                    generation_config={
-                        "temperature": 0.7, 
-                        "max_output_tokens": 1000
-                    }
-                )
-                
-                # Extract raw response
-                raw_response = response.candidates[0].content.parts[0].text
-                logger.info(f"Attempt {attempt + 1} - Raw Gemini Response: {raw_response}")
-                
-                # Parse questions
-                questions = [q.strip() for q in raw_response.split('\n') if q.strip()]
-                
-                # Filter out unwanted lines, but be less aggressive
-                questions = [
-                    q for q in questions
-                    if len(q) > 20 and  # Ensure it's a substantial question
-                    not any(x in q.lower() for x in [
-                        'here are', 'following', 'generate', 'okay', 'questions for'
-                    ])
-                ]
-                
-                logger.info(f"Attempt {attempt + 1} - Parsed Questions: {questions}")
-                
-                # Validate questions
-                if len(questions) >= 6:
-                    break  # We have enough questions
-                else:
-                    logger.warning(f"Attempt {attempt + 1} - Insufficient questions generated: {len(questions)}")
-                    if attempt == max_attempts - 1:
-                        return render(request, 'home.html', {
-                            'error': f'Failed to generate sufficient interview questions (only {len(questions)} generated). '
-                                     'Please try again or contact support.'
-                        })
-            except Exception as e:
-                logger.error(f"Question generation error for {request.user.username}: {str(e)}")
-                return render(request, 'home.html', {
-                    'error': 'An error occurred while generating interview questions. Please try again.'
-                })
+    if not skills:
+        request.session['error'] = "Please add a skill before starting an interview."
+        return redirect('home')
+
+    # Get or generate exactly 6 questions
+    questions = Question.objects.filter(user=request.user)
+    if questions.count() != 6:  # Ensure exactly 6 questions
+        Question.objects.filter(user=request.user).delete()  # Clear existing questions
+        skill = skills.first()  # Use the first skill
+        technical_qs, behavioral_qs = generate_questions_via_gemini(skill.language)
+        if len(technical_qs) != 3 or len(behavioral_qs) != 3:
+            logger.error("Gemini API did not return exactly 3 technical and 3 behavioral questions after adjustment.")
+            return render(request, 'interview.html', {'error': 'Error generating questions. Please try again.'})
         
-        # Create question records
-        created_questions = []
-        for i, question_text in enumerate(questions[:6]):
-            question_type = 'technical' if i < 3 else 'behavioral'
-            new_question = Question.objects.create(
-                user=request.user, 
-                type=question_type, 
-                content=question_text, 
-                skill=skill
+        for q in technical_qs + behavioral_qs:
+            Question.objects.create(
+                user=request.user,
+                type=q['type'],
+                content=q['content'],
+                skill=skill if q['type'] == 'technical' else None
             )
-            created_questions.append(new_question)
-        
-        logger.info(f"Generated {len(created_questions)} questions for user {request.user.username}: {[q.content for q in created_questions]}")
-    
-    # Retrieve next unanswered question
-    question = Question.objects.filter(
-        user=request.user, 
-        response__isnull=True
-    ).first()
-    
-    # No more questions - redirect to results
-    if not question:
+        questions = Question.objects.filter(user=request.user).order_by('id')[:6]
+
+    total_questions = 6
+    answered_questions = Response.objects.filter(question__in=questions).count()
+    remaining_questions = total_questions - answered_questions
+
+    if remaining_questions == 0:
+        for response in Response.objects.filter(question__in=questions):
+            if response.score is None:
+                if response.question.type == 'technical':
+                    score, feedback = evaluate_technical_response(response.question, response.content)
+                else:
+                    score, feedback = evaluate_behavioral_response(response.video.path, response.question.content)
+                response.score = score
+                response.feedback = feedback
+                response.save()
         return redirect('interview_results')
-    
-    # Compute total and remaining questions
-    total_questions = Question.objects.filter(user=request.user).count()
-    remaining_questions = Question.objects.filter(user=request.user, response__isnull=True).count()
-    current_question = total_questions - remaining_questions + 1  # Compute current question number
-    
-    # Handle response submission
+
+    current_question = questions[answered_questions]
+    question_type = current_question.type
+
     if request.method == 'POST':
-        form = ResponseForm(request.POST)
-        if form.is_valid():
-            try:
-                response_content = form.cleaned_data['content']
-                
-                # Evaluation prompt
-                eval_prompt = (
-                    f"Question Type: {question.type}\n"
-                    f"Question: '{question.content}'\n"
-                    f"Candidate's Response: '{response_content}'\n\n"
-                    "Provide a detailed evaluation including:\n"
-                    "1. Comprehensiveness\n"
-                    "2. Technical accuracy\n"
-                    "3. Problem-solving approach\n"
-                    "4. Communication clarity\n"
-                    "5. Numerical score (0-100%)\n"
-                    "Format clearly with sections."
-                )
-                
-                # Generate evaluation
-                eval_response = model.generate_content(eval_prompt)
-                evaluation = eval_response.candidates[0].content.parts[0].text
-                
-                # Score extraction
-                try:
-                    score_match = re.search(r'Score:\s*(\d+)%', evaluation)
-                    score = float(score_match.group(1)) if score_match else 75.0
-                except Exception:
-                    score = 75.0
-                
-                # Create response record
-                Response.objects.create(
-                    question=question, 
-                    content=response_content, 
-                    score=score, 
-                    feedback=evaluation
-                )
-                
-                # Redirect to next question
-                return redirect('start_interview')
-            
-            except Exception as e:
-                logger.error(f"Response evaluation error: {str(e)}")
+        if question_type == 'technical':
+            content = request.POST.get('content')
+            if not content:
                 return render(request, 'interview.html', {
-                    'form': form, 
-                    'question': question, 
-                    'error': 'Failed to evaluate response.',
+                    'error': 'Response cannot be empty.',
+                    'question': current_question,
                     'total_questions': total_questions,
                     'remaining_questions': remaining_questions,
-                    'current_question': current_question
+                    'current_question': answered_questions + 1,
                 })
-    else:
-        # GET request: prepare form
-        form = ResponseForm()
-    
-    # Render interview page
+            Response.objects.create(question=current_question, content=content)
+        else:
+            video = request.FILES.get('video')
+            if not video:
+                return render(request, 'interview.html', {
+                    'error': 'Video response is required.',
+                    'question': current_question,
+                    'total_questions': total_questions,
+                    'remaining_questions': remaining_questions,
+                    'current_question': answered_questions + 1,
+                })
+            Response.objects.create(question=current_question, video=video)
+        return redirect('interview')
+
     return render(request, 'interview.html', {
-        'form': form, 
-        'question': question,
+        'question': current_question,
         'total_questions': total_questions,
         'remaining_questions': remaining_questions,
-        'current_question': current_question
+        'current_question': answered_questions + 1,
     })
 
 @login_required
 def interview_results(request):
-    questions = Question.objects.filter(user=request.user)
-    responses = Response.objects.filter(question__user=request.user)
-    return render(request, 'results.html', {'questions': questions, 'responses': responses})
+    questions = Question.objects.filter(user=request.user).order_by('id')[:6]
+    responses = Response.objects.filter(question__in=questions)
+    
+    technical_responses = responses.filter(question__type='technical')
+    behavioral_responses = responses.filter(question__type='behavioral')
+    
+    total_questions = questions.count()
+    average_score = sum(r.score for r in responses if r.score is not None) / responses.count() if responses.exists() else 0
+    
+    return render(request, 'results.html', {
+        'technical_responses': technical_responses,
+        'behavioral_responses': behavioral_responses,
+        'total_questions': total_questions,
+        'average_score': round(average_score, 2),
+    })

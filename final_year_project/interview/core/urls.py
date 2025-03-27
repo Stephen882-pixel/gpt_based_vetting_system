@@ -1,12 +1,12 @@
 from django.urls import path
-from .views import register, user_login, user_logout, home, skill_create, interview_results,start_interview
+from . import views
 
 urlpatterns = [
-    path('register/', register, name='register'),
-    path('login/', user_login, name='login'),
-    path('logout/', user_logout, name='logout'),
-    path('home/', home, name='home'),
-    path('skills/create/', skill_create, name='skill_create'),
-    path('interview/start/', start_interview, name='start_interview'),
-    path('interview/results/', interview_results, name='interview_results'),
+    path('login/', views.user_login, name='login'),
+    path('register/', views.register, name='register'),
+    path('logout/', views.user_logout, name='logout'),
+    path('home/', views.home, name='home'),
+    path('skill/create/', views.skill_create, name='skill_create'),
+    path('interview/start/', views.interview, name='interview'),
+    path('interview/results/', views.interview_results, name='interview_results'),
 ]

@@ -5,125 +5,123 @@
     <style>
         body {
             font-family: 'Arial', sans-serif;
-            background-color: #f5f5f5;
+            background: linear-gradient(to bottom, #f5f5f5, #e0e0e0);
             margin: 0;
             padding: 0;
+            min-height: 100vh;
         }
-        .results-container {
+        .container {
             max-width: 900px;
             margin: 40px auto;
             padding: 20px;
         }
-        h2 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 2.2em;
-        }
-        .question-card {
+        .card {
             background-color: #fff;
             border-radius: 10px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
             padding: 20px;
-            border-left: 5px solid;
-            border-left-color: #4CAF50; /* Green for technical */
+            margin-bottom: 20px;
         }
-        .question-card.behavioral {
-            border-left-color: #2196F3; /* Blue for behavioral */
-        }
-        .question-card h3 {
-            margin: 0 0 15px 0;
-            font-size: 1.5em;
+        h2 {
+            font-size: 2em;
             color: #333;
+            margin-bottom: 20px;
+            text-align: center;
         }
-        .question-card .type-label {
-            font-size: 0.9em;
-            color: #777;
-            margin-left: 10px;
+        .summary {
+            text-align: center;
+            margin-bottom: 30px;
         }
-        .answer-section, .score-section, .feedback-section {
-            margin-bottom: 15px;
-        }
-        .answer-section strong, .score-section strong, .feedback-section strong {
-            color: #555;
-            font-weight: 600;
-        }
-        .answer-section pre {
-            background-color: #f8f8f8;
-            padding: 10px;
-            border-radius: 5px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 0.95em;
-            color: #333;
-        }
-        .score-section {
-            display: flex;
-            align-items: center;
-        }
-        .score-section .score {
+        .summary p {
             font-size: 1.2em;
-            font-weight: bold;
-            margin-left: 10px;
-        }
-        .score-section .score.high {
-            color: #4CAF50; /* Green for high scores */
-        }
-        .score-section .score.medium {
-            color: #FFC107; /* Yellow for medium scores */
-        }
-        .score-section .score.low {
-            color: #F44336; /* Red for low scores */
-        }
-        .feedback-section p {
+            color: #666;
             margin: 5px 0;
-            color: #444;
-            line-height: 1.6;
         }
-        .back-button {
-            display: block;
-            width: 200px;
-            margin: 30px auto;
+        .summary .score {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .question {
+            border-bottom: 1px solid #eee;
+            padding: 15px 0;
+        }
+        .question:last-child {
+            border-bottom: none;
+        }
+        .question p {
+            margin: 5px 0;
+            font-size: 1.1em;
+            color: #444;
+        }
+        .question .score {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .question .feedback {
+            color: #666;
+            font-style: italic;
+        }
+        .btn {
             padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 1.1em;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: inline-block;
+        }
+        .btn-primary {
             background-color: #4CAF50;
             color: white;
-            text-align: center;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 1.1em;
         }
-        .back-button:hover {
+        .btn-primary:hover {
             background-color: #45a049;
+        }
+        .btn-secondary {
+            background-color: #2196F3;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #1e88e5;
         }
     </style>
 </head>
 <body>
-    <div class="results-container">
-        <h2>Interview Results</h2>
-        {% for question in questions %}
-            <div class="question-card {% if question.type == 'behavioral' %}behavioral{% endif %}">
-                <h3>{{ question.content }} <span class="type-label">({{ question.type|capfirst }})</span></h3>
-                {% for response in responses %}
-                    {% if response.question == question %}
-                        <div class="answer-section">
-                            <strong>Answer:</strong>
-                            <pre>{{ response.content }}</pre>
-                        </div>
-                        <div class="score-section">
-                            <strong>Score:</strong>
-                            <span class="score {% if response.score >= 80 %}high{% elif response.score >= 60 %}medium{% else %}low{% endif %}">{{ response.score }}%</span>
-                        </div>
-                        <div class="feedback-section">
-                            <strong>Feedback:</strong>
-                            <p>{{ response.feedback }}</p>
-                        </div>
-                    {% endif %}
-                {% endfor %}
+    <div class="container">
+        <div class="card">
+            <h2>Interview Results</h2>
+            <div class="summary">
+                <p>Total Questions: {{ total_questions }}</p>
+                <p>Average Score: <span class="score">{{ average_score }}%</span></p>
             </div>
-        {% endfor %}
-        <a href="{% url 'home' %}" class="back-button">Back to Home</a>
+            <h3>Technical Questions</h3>
+            {% for response in technical_responses %}
+                <div class="question">
+                    <p><strong>Question:</strong> {{ response.question.content }}</p>
+                    <p><strong>Your Answer:</strong> {{ response.content }}</p>
+                    <p><strong>Score:</strong> <span class="score">{{ response.score }}%</span></p>
+                    <p><strong>Feedback:</strong> <span class="feedback">{{ response.feedback }}</span></p>
+                </div>
+            {% empty %}
+                <p>No technical responses found.</p>
+            {% endfor %}
+            <h3>Behavioral Questions</h3>
+            {% for response in behavioral_responses %}
+                <div class="question">
+                    <p><strong>Question:</strong> {{ response.question.content }}</p>
+                    <p><strong>Score:</strong> <span class="score">{{ response.score }}%</span></p>
+                    <p><strong>Feedback:</strong> <span class="feedback">{{ response.feedback }}</span></p>
+                </div>
+            {% empty %}
+                <p>No behavioral responses found.</p>
+            {% endfor %}
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="{% url 'interview' %}" class="btn btn-primary">Start New Interview</a>
+                <a href="{% url 'home' %}" class="btn btn-secondary">Back to Home</a>
+            </div>
+        </div>
     </div>
 </body>
 </html>
