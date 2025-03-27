@@ -1,0 +1,20 @@
+# Core Django and Web Framework
+Django==4.2.11  # Stable Django version compatible with your project
+django-environ==0.11.2  # For managing environment variables
+
+# Database and Utilities
+psycopg2-binary==2.9.9  # PostgreSQL adapter (if using PostgreSQL; adjust for other databases)
+python-decouple==3.8  # For separating config from code
+
+# Google Gemini API
+google-generativeai==0.7.2  # For Google Gemini API integration
+
+# Email Sending
+# Django’s built-in send_mail is used, so no additional package needed
+
+# Logging and Debugging
+gunicorn==22.0.0  # WSGI server for deployment
+# Django’s built-in logging is used, so python-logging-lumberjack is optional
+
+# Development Tools
+ipython==8.22.2  # Enhanced Python shell for debugging

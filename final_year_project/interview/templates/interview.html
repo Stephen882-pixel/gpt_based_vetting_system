@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interview Question</title>
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/theme/dracula.min.css">
+    <style>
+        .CodeMirror {
+            height: 500px;
+            border: 2px solid #4a4a4a;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .editor-container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 15px;
+            background-color: #f4f4f4;
+            border-radius: 10px;
+        }
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        #language-select {
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .question-container {
+            max-width: 900px;
+            margin: 20px auto;
+        }
+        .submit-button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: block; /* Add this to make the button a block element */
+            margin-left: auto; /* Center horizontally */
+            margin-right: auto; /* Center horizontally */
+        }
+        .submit-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="question-container">
+        <h2>Interview Question</h2>
+
+        {% if error %}
+            <p style="color:red">{{ error }}</p>
+        {% endif %}
+
+        <div>
+            <p><strong>Question Type:</strong> {{ question.type|capfirst }}</p>
+            <p><strong>Question:</strong> {{ question.content }}</p>
+            <p><strong>Total Questions:</strong> {{ total_questions }}</p>
+            <p><strong>Remaining Questions:</strong> {{ remaining_questions }}</p>
+            <p>Question {{ current_question }} of {{ total_questions }}</p>
+        </div>
+    </div>
+
+    <form method="post" id="response-form">
+        {% csrf_token %}
+        <div class="editor-container">
+            <div class="editor-header">
+                <h3>Code Solution</h3>
+                <select id="language-select">
+                    <option value="java" {% if question.skill.language|lower == "java" %}selected{% endif %}>Java</option>
+                    <option value="python" {% if question.skill.language|lower == "python" %}selected{% endif %}>Python</option>
+                    <option value="javascript" {% if question.skill.language|lower == "javascript" %}selected{% endif %}>JavaScript</option>
+                    <option value="cpp" {% if question.skill.language|lower == "cpp" %}selected{% endif %}>C++</option>
+                </select>
+            </div>
+            <!-- Hidden textarea for form submission -->
+            <textarea id="code-editor" name="content" style="display:none;"></textarea>
+            <div id="error-container" style="color: red; margin-top: 10px;"></div>
+        </div>
+        <button type="submit" class="submit-button">Submit Response</button>
+    </form>
+
+    <!-- CodeMirror Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/codemirror.min.js"></script>
+    <!-- Language Modes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/mode/javascript/javascript.min.js"></script>
+    <!-- Addons for Enhanced Functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.12/addon/lint/lint.min.js"></script>
+
+    <script>
+        // Initialize CodeMirror
+        var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+            mode: "text/x-java",  // Default to Java
+            theme: "dracula",
+            lineNumbers: true,
+            lineWrapping: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            extraKeys: {
+                "Tab": "insertSoftTab",
+                "Shift-Tab": "indentLess"
+            }
+        });
+
+        // Language selection logic
+        document.getElementById('language-select').addEventListener('change', function() {
+            var languageModes = {
+                'java': 'text/x-java',
+                'python': 'text/x-python',
+                'javascript': 'text/javascript',
+                'cpp': 'text/x-c++src'
+            };
+            
+            var mode = languageModes[this.value];
+            editor.setOption('mode', mode);
+
+            // Set default template based on language
+            var templates = {
+                'java': `public class Solution {
+    public static void main(String[] args) {
+        // Your solution here
+    }
+}`,
+                'python': `def solution():
+    # Your solution here
+    pass
+
+# Main execution
+if __name__ == "__main__":
+    solution()`,
+                'javascript': `function solution() {
+    // Your solution here
+}
+
+// Example usage
+console.log(solution());`,
+                'cpp': `#include <iostream>
+
+int main() {
+    // Your solution here
+    return 0;
+}`
+            };
+
+            // Only set the template if the editor is empty
+            if (!editor.getValue().trim()) {
+                editor.setValue(templates[this.value]);
+            }
+        });
+
+        // Set initial language based on question skill
+        var initialLanguage = "{{ question.skill.language|lower }}";
+        var languageSelect = document.getElementById('language-select');
+        if (initialLanguage && languageSelect.options.namedItem(initialLanguage)) {
+            languageSelect.value = initialLanguage;
+            languageSelect.dispatchEvent(new Event('change'));
+        }
+
+        // Optional: Basic syntax error checking
+        function checkSyntax() {
+            var content = editor.getValue();
+            var errorContainer = document.getElementById('error-container');
+            errorContainer.textContent = '';
+
+            try {
+                // For Java-like languages
+                if (content.includes('public class') && !content.includes('public static void main')) {
+                    errorContainer.textContent = 'Warning: Missing main method in Java class';
+                }
+
+                // Check for basic syntax issues
+                if (content.includes('===') && document.getElementById('language-select').value !== 'javascript') {
+                    errorContainer.textContent = 'Potential syntax error: === used in non-JavaScript language';
+                }
+            } catch (error) {
+                errorContainer.textContent = 'Syntax check error: ' + error.message;
+            }
+        }
+
+        // Attach syntax checking to editor changes
+        editor.on('change', checkSyntax);
+
+        // Ensure CodeMirror content is synced with the form on submit
+        document.getElementById('response-form').addEventListener('submit', function() {
+            document.getElementById('code-editor').value = editor.getValue();
+        });
+    </script>
+</body>
+</html>
